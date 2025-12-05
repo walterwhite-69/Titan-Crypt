@@ -382,7 +382,9 @@ python Titan Crypt.py
 <p align="center">
   <b>TitanCrypt</b> - Protect Your Python Code
   <br>
-  <sub>Made with ❤️ by Walter</sub>
+  <div align="center">
+  <img src="https://animatedsvg.vercel.app/generate?lines=Made+by+%3F%28walter%29&animation=neon&font=Fira+Code&color=0000ff%2C+fc032c%2C+0390fc%2C+fc5a03&bg_color=transparent&size=45&width=600&height=197&duration=3000&center=true&repeat=true&letter_spacing=14&glitch_intensity=5&stagger_delay=50&typing_mode=sequential&terminal_color_mode=rainbow&terminal_colors=FF0080%2CFF8000%2CFFFF00%2C00FF00%2C00FFFF%2C0080FF%2C8000FF&border_width=0&border_color=000000&border_radius=0&padding=0" alt="Animated SVG">
+</div>
   <br><br>
   <a href="https://discord.gg/rgWcEw5G8a">Join Discord</a> •
   <a href="https://github.com/walterwhite-69/Titan-Crypt">GitHub</a>
