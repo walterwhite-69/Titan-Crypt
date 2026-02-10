@@ -580,10 +580,8 @@ exec(compile(_decrypt().decode(), '<titan>', 'exec'))
             result = self.engine.zlib_compress(b64)
             metadata["is_marshal"] = True
         elif method_id == 40:
-            import marshal
-            code_obj = compile(code, '<titan>', 'exec')
-            marshaled = marshal.dumps(code_obj)
-            layer1 = self.engine.lzma_compress(marshaled)
+            # Use data directly instead of marshal to avoid version conflicts/segfaults
+            layer1 = self.engine.lzma_compress(data)
             layer2 = self.engine.xor_encrypt(layer1, 0xDE)
             layer3 = self.engine.substitution_cipher(layer2)
             layer4 = self.engine.aes_gcm_encrypt(layer3, password)
@@ -594,7 +592,7 @@ exec(compile(_decrypt().decode(), '<titan>', 'exec'))
             layer9 = self.engine.base64_encode(layer8)
             layer10 = self.engine.xor_encrypt(layer9, 0xAD)
             result = layer10
-            metadata["is_marshal"] = True
+            metadata["is_marshal"] = False
         else:
             result = data
             
@@ -1395,7 +1393,7 @@ def show_main_menu():
         console.print(Align.center(table))
         console.print()
 
-def _generate_loader(encoded_data: str, method_id: int, needs_password: bool, is_marshal: bool) -> str:
+def _generate_loader(encoded_data: str, method_id: int, needs_password: bool, is_marshal: bool, password: str = None) -> str:
     loader = '''# -*- coding: utf-8 -*-
 # TitanCrypt Encrypted Python Script
 import base64,zlib,lzma,struct,hashlib,marshal,codecs
@@ -1408,9 +1406,17 @@ except:
 from cryptography.fernet import Fernet
 '''
     
-    if needs_password:
-        loader += '''from getpass import getpass
-_pw=getpass("Password: ")
+    if needs_password and password:
+        # Obfuscate the password - encode it so it's not visible as plaintext
+        pw_bytes = password.encode('utf-8')
+        pw_b64 = base64.b64encode(pw_bytes).decode('utf-8')
+        # Further obfuscate by XOR with a key and then base64 again
+        xor_key = 0x7A
+        pw_xored = bytes([b ^ xor_key for b in pw_bytes])
+        pw_hidden = base64.b64encode(pw_xored).decode('utf-8')
+        loader += f'''_h="{pw_hidden}"
+_t=base64.b64decode(_h)
+_pw=''.join(chr(b^0x7A) for b in _t)
 '''
     else:
         loader += '''_pw=None
@@ -1528,12 +1534,29 @@ def _decrypt(d,m,pw):
         r=_D.xr(c,0xAD);r=base64.b64decode(r);r=zlib.decompress(r);r=_D.fn(r,pw+"_l7");r=_D.cc(r,pw+"_l6");r=_D.bf(r,pw+"_l5");r=_D.gcm(r,pw);r=_D.sub(r);r=_D.xr(r,0xDE);return lzma.decompress(r)
     return c
 
-_raw=_decrypt(base64.b64decode(_DATA),_METHOD,_pw)
-if _MARSHAL:exec(marshal.loads(_raw))
-else:exec(_raw.decode()if isinstance(_raw,bytes)else _raw)
+
+try:
+    _raw=_decrypt(base64.b64decode(_DATA),_METHOD,_pw)
+    if _MARSHAL:
+        try:
+            exec(marshal.loads(_raw))
+        except (ValueError, EOFError, TypeError) as _e:
+            print("Error: Marshal bytecode incompatible with this Python version.")
+            print("This file was encrypted on a different Python version.")
+            import sys
+            print("Please re-encrypt on Python " + sys.version.split()[0])
+            sys.exit(1)
+    else:
+        exec(_raw.decode()if isinstance(_raw,bytes)else _raw)
+except Exception as _e:
+    print("Decryption error: " + str(_e))
+    print("This file may be corrupted or encrypted with a different password.")
+    import sys
+    sys.exit(1)
 '''
     
     return loader
+
 
 def show_encryption_levels():
     clear_screen()
@@ -1576,8 +1599,6 @@ def encrypt_menu():
     method_id = IntPrompt.ask("[cyan]Select encryption method (1-40)[/cyan]", default=1)
     
     password = None
-    if method_id >= 11:
-        password = Prompt.ask("[cyan]Enter encryption password[/cyan]", password=True)
     
     if not confirm_action(f"Encrypt '{os.path.basename(file_path)}' using method {method_id}?", "Confirm Encryption"):
         console.print("[yellow]Encryption cancelled.[/yellow]")
@@ -1596,9 +1617,14 @@ def encrypt_menu():
             task = progress.add_task("[cyan]Encrypting...", total=100)
             
             progress.update(task, advance=10, description="[cyan]Reading file...")
-            with open(file_path, 'r') as f:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 code = f.read()
             time.sleep(0.1)
+            
+            # Auto-generate a hidden password for methods 11-40
+            if method_id >= 11:
+                seed_data = code + str(time.time()) + str(method_id) + secrets.token_hex(8)
+                password = hashlib.sha256(seed_data.encode()).hexdigest()[:32]
             
             progress.update(task, advance=30, description="[cyan]Applying encryption...")
             encryptor = TitanEncryptor()
@@ -1607,7 +1633,7 @@ def encrypt_menu():
             
             progress.update(task, advance=30, description="[cyan]Encoding data...")
             encoded_data = base64.b64encode(encrypted_data).decode('utf-8')
-            loader_code = _generate_loader(encoded_data, method_id, password is not None, metadata.get('is_marshal', False))
+            loader_code = _generate_loader(encoded_data, method_id, password is not None, metadata.get('is_marshal', False), password)
             time.sleep(0.1)
             
             progress.update(task, advance=20, description="[cyan]Writing output...")
@@ -1616,7 +1642,7 @@ def encrypt_menu():
             output_name = f"encrypted_{base_name}"
             output_file = os.path.join(dir_name, output_name) if dir_name else output_name
             
-            with open(output_file, 'w') as f:
+            with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(loader_code)
             
             progress.update(task, advance=10, description="[green]Complete!")
